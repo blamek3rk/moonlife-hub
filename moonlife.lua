@@ -5,7 +5,7 @@
     local Window = Starlight:CreateWindow({
         Name = "Moonlife",
         Subtitle = "v1.0",
-        Icon = 118696459653898,
+        Icon = "rbxassetid://118696459653898",
 
         InterfaceAdvertisingPrompts = false,
 
@@ -50,8 +50,6 @@
 
     local fastClickerToggle = false
     local fastClickerConnection
-    local buildStrengthToggle = false
-    local buildStrengthConnection
 
     ScriptsGroupbox:CreateButton({
         Name = "Fast Clicker",
@@ -99,62 +97,6 @@
             end
         end
     }, "BTN_FAST_CLICKER")
-
-    ScriptsGroupbox:CreateButton({
-        Name = "Auto Build Strength (Equip Max Weight)",
-        Callback = function()
-            buildStrengthToggle = not buildStrengthToggle
-            local player = game.Players.LocalPlayer
-            
-            if buildStrengthToggle then
-                print("Building strength... equipping lightest weight first")
-                local equipment = player:FindFirstChild("TrainEquipment")
-                if equipment then
-                    equipment.Value = 0  -- Start with 1LB
-                end
-                
-                buildStrengthConnection = game:GetService("RunService").Heartbeat:Connect(function()
-                    if not buildStrengthToggle then return end
-                    
-                    -- Auto click to build strength
-                    if game.ReplicatedStorage:FindFirstChild("Msg") then
-                        local Click = game.ReplicatedStorage.Msg:FindFirstChild("Click")
-                        local LocalClick = game.ReplicatedStorage:FindFirstChild("LocalMsg") and game.ReplicatedStorage.LocalMsg:FindFirstChild("Click")
-                        if Click then
-                            Click:FireServer()
-                        end
-                        if LocalClick then
-                            LocalClick:Fire()
-                        end
-                    end
-                    
-                    -- Check if we can equip heavier weights
-                    local equipment = player:FindFirstChild("TrainEquipment")
-                    if equipment and equipment.Value < 5 then
-                        -- Try to upgrade weight every 100 frames
-                        if math.random(1, 100) == 1 then
-                            equipment.Value = equipment.Value + 1
-                            print("Upgraded to weight level: " .. equipment.Value)
-                        end
-                    elseif equipment and equipment.Value < 5 then
-                        -- Try to equip 100LB
-                        equipment.Value = 5
-                        buildStrengthToggle = false
-                        if buildStrengthConnection then
-                            buildStrengthConnection:Disconnect()
-                        end
-                        print("Equipped max weight (100LB)!")
-                    end
-                end)
-            else
-                -- Stop building strength
-                if buildStrengthConnection then
-                    buildStrengthConnection:Disconnect()
-                end
-                print("Stopped building strength")
-            end
-        end
-    }, "BTN_BUILD_STRENGTH")
 
     -- TAB 3: Visuals
     local VisualsTab = TabSection:CreateTab({
