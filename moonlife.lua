@@ -35,7 +35,227 @@ local Window = Starlight:CreateWindow({
         Column = 1,
     }, "GB_HOME_MAIN")
 
-    -- TAB 2: Visuals
+    -- TAB 2: Aimbot
+    local AimbotTab = TabSection:CreateTab({
+        Name = "Aimbot",
+        Icon = NebulaIcons:GetIcon("gps_fixed", "Material"),
+        Columns = 2,
+    }, "TAB_AIMBOT")
+
+    local AimbotGroupbox = AimbotTab:CreateGroupbox({
+        Name = "Aimbot Settings",
+        Icon = NebulaIcons:GetIcon("my_location", "Material"),
+        Column = 1,
+    }, "GB_AIMBOT_MAIN")
+
+    -- Camlock System
+    local CamlockSettings = {
+        Enabled = false,
+        TargetPart = "Head",
+        FOV = 250,
+        LockStrength = 1,
+    }
+    
+    local HoldingMouse2 = false
+    
+    -- Find target closest to center of screen
+    local function GetClosestPlayer()
+        local Target = nil
+        local MaxDist = CamlockSettings.FOV
+        
+        for _, v in pairs(game.Players:GetPlayers()) do
+            if v ~= game.Players.LocalPlayer and v.Character and v.Character:FindFirstChild(CamlockSettings.TargetPart) then
+                -- Team Check
+                if v.Team and v.Team == game.Players.LocalPlayer.Team then continue end
+                
+                local Part = v.Character[CamlockSettings.TargetPart]
+                local ScreenPos, OnScreen = workspace.CurrentCamera:WorldToViewportPoint(Part.Position)
+                
+                if OnScreen then
+                    local Center = Vector2.new(workspace.CurrentCamera.ViewportSize.X / 2, workspace.CurrentCamera.ViewportSize.Y / 2)
+                    local Dist = (Vector2.new(ScreenPos.X, ScreenPos.Y) - Center).Magnitude
+                    
+                    if Dist < MaxDist then
+                        MaxDist = Dist
+                        Target = Part
+                    end
+                end
+            end
+        end
+        return Target
+    end
+    
+    -- Input Detection (Hold to Lock)
+    game:GetService("UserInputService").InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton2 then
+            HoldingMouse2 = true
+        end
+    end)
+    
+    game:GetService("UserInputService").InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton2 then
+            HoldingMouse2 = false
+        end
+    end)
+    
+    -- The Camlock Loop (Priority Camera)
+    game:GetService("RunService"):BindToRenderStep("Camlock", Enum.RenderPriority.Camera.Value + 1, function()
+        if CamlockSettings.Enabled and HoldingMouse2 then
+            local Target = GetClosestPlayer()
+            if Target then
+                local CurrentCF = workspace.CurrentCamera.CFrame
+                local TargetCF = CFrame.new(CurrentCF.Position, Target.Position)
+                
+                workspace.CurrentCamera.CFrame = CurrentCF:Lerp(TargetCF, CamlockSettings.LockStrength)
+            end
+        end
+    end)
+
+    -- Camlock Toggle
+    AimbotGroupbox:CreateToggle({
+        Name = "Camlock",
+        CurrentValue = false,
+        Style = 2,
+        Icon = NebulaIcons:GetIcon("lock", "Material"),
+        Tooltip = "Lock camera to target player (Hold Right Click)",
+        Callback = function(Value)
+            CamlockSettings.Enabled = Value
+            print("Camlock: " .. (Value and "ENABLED" or "DISABLED"))
+        end
+    }, "TOGGLE_CAMLOCK")
+
+    -- Silent Aim System
+    local SilentAimSettings = {
+        Enabled = false,
+        TargetPart = "Head",
+        TeamCheck = false,
+        VisibleCheck = false,
+        HitChance = 100
+    }
+    
+    local function CalculateChance(Percentage)
+        Percentage = math.floor(Percentage)
+        local chance = math.floor(Random.new().NextNumber(Random.new(), 0, 1) * 100) / 100
+        return chance <= Percentage / 100
+    end
+    
+    local function getDirection(Origin, Position)
+        return (Position - Origin).Unit * 1000
+    end
+    
+    local function IsPlayerVisible(Player)
+        local PlayerCharacter = Player.Character
+        local LocalPlayerCharacter = game.Players.LocalPlayer.Character
+        
+        if not (PlayerCharacter and LocalPlayerCharacter) then return false end
+        
+        local PlayerRoot = PlayerCharacter:FindFirstChild(SilentAimSettings.TargetPart) or PlayerCharacter:FindFirstChild("HumanoidRootPart")
+        
+        if not PlayerRoot then return false end
+        
+        local CastPoints = {PlayerRoot.Position}
+        local IgnoreList = {LocalPlayerCharacter, PlayerCharacter}
+        local ObscuringObjects = #workspace.CurrentCamera:GetPartsObscuringTarget(CastPoints, IgnoreList)
+        
+        return ObscuringObjects == 0
+    end
+    
+    local function getClosestPlayerSilent()
+        local Closest = nil
+        local ClosestDistance = math.huge
+        
+        for _, Player in pairs(game.Players:GetPlayers()) do
+            if Player == game.Players.LocalPlayer then continue end
+            if SilentAimSettings.TeamCheck and Player.Team == game.Players.LocalPlayer.Team then continue end
+            
+            local Character = Player.Character
+            if not Character then continue end
+            
+            if SilentAimSettings.VisibleCheck and not IsPlayerVisible(Player) then continue end
+            
+            local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
+            local Humanoid = Character:FindFirstChild("Humanoid")
+            if not HumanoidRootPart or not Humanoid or Humanoid.Health <= 0 then continue end
+            
+            local ScreenPos, OnScreen = workspace.CurrentCamera:WorldToViewportPoint(HumanoidRootPart.Position)
+            if not OnScreen then continue end
+            
+            local MousePos = game:GetService("UserInputService"):GetMouseLocation()
+            local Distance = (MousePos - Vector2.new(ScreenPos.X, ScreenPos.Y)).Magnitude
+            
+            if Distance < ClosestDistance then
+                local TargetPart = Character:FindFirstChild(SilentAimSettings.TargetPart)
+                if TargetPart then
+                    Closest = TargetPart
+                    ClosestDistance = Distance
+                end
+            end
+        end
+        
+        return Closest
+    end
+    
+    -- Silent Aim Hooks
+    local oldNamecall
+    oldNamecall = hookmetamethod(game, "__namecall", function(...)
+        local Method = getnamecallmethod()
+        local Arguments = {...}
+        local self = Arguments[1]
+        
+        if SilentAimSettings.Enabled and self == workspace and not checkcaller() then
+            local chance = CalculateChance(SilentAimSettings.HitChance)
+            if not chance then return oldNamecall(...) end
+            
+            if Method == "FindPartOnRayWithIgnoreList" then
+                local A_Ray = Arguments[2]
+                local HitPart = getClosestPlayerSilent()
+                
+                if HitPart then
+                    local Origin = A_Ray.Origin
+                    local Direction = getDirection(Origin, HitPart.Position)
+                    Arguments[2] = Ray.new(Origin, Direction)
+                    return oldNamecall(unpack(Arguments))
+                end
+            elseif Method == "Raycast" then
+                local A_Origin = Arguments[2]
+                local HitPart = getClosestPlayerSilent()
+                
+                if HitPart then
+                    Arguments[3] = getDirection(A_Origin, HitPart.Position)
+                    return oldNamecall(unpack(Arguments))
+                end
+            end
+        end
+        
+        return oldNamecall(...)
+    end)
+    
+    -- Silent Aim Toggle
+    AimbotGroupbox:CreateToggle({
+        Name = "Silent Aim",
+        CurrentValue = false,
+        Style = 2,
+        Icon = NebulaIcons:GetIcon("gps_not_fixed", "Material"),
+        Tooltip = "Automatically redirect shots to nearest player",
+        Callback = function(Value)
+            SilentAimSettings.Enabled = Value
+            print("Silent Aim: " .. (Value and "ENABLED" or "DISABLED"))
+        end
+    }, "TOGGLE_SILENTAIM")
+    
+    -- Target Part Dropdown
+    AimbotGroupbox:CreateDropdown({
+        Name = "Target Part",
+        Options = {"Head", "HumanoidRootPart", "UpperTorso", "LowerTorso"},
+        Default = "Head",
+        Callback = function(Value)
+            SilentAimSettings.TargetPart = Value
+            CamlockSettings.TargetPart = Value
+            print("Target Part set to: " .. Value)
+        end
+    }, "DROPDOWN_TARGET_PART")
+
+    -- TAB 3: Visuals
     --[[
         ADVANCED ESP SYSTEM FEATURES:
         
@@ -96,7 +316,12 @@ local Window = Starlight:CreateWindow({
     local ShowName = false
     local ShowDistance = true
     local MaxDistance = 1000
-    local FOVValue = 70
+    
+    -- FOV Variables
+    local defaultFOV = workspace.CurrentCamera.FieldOfView
+    local customFOV = defaultFOV
+    local isFOVEnabled = false
+    
     local ESPObjects = {}
     local CharacterConnections = {}
     local Highlights = {}
@@ -959,44 +1184,73 @@ local Window = Starlight:CreateWindow({
         end
     }, "TOGGLE_CHAMS")
 
-    -- FOV Changer Groupbox
+    -- Camera Settings Groupbox
     local VisualsGroupbox2 = VisualsTab:CreateGroupbox({
         Name = "Camera Settings",
         Icon = NebulaIcons:GetIcon("videocam", "Material"),
         Column = 2,
     }, "GB_VISUALS_CAMERA")
 
-    -- FOV Slider with continuous update
-    local FOVConnection = nil
+    -- FOV System Setup
+    local LocalPlayer = game:GetService("Players").LocalPlayer
+    local camera = workspace.CurrentCamera
     
-    -- Create continuous FOV enforcement connection
-    if not FOVConnection then
-        FOVConnection = game:GetService("RunService").Heartbeat:Connect(function()
-            if workspace.CurrentCamera and FOVValue ~= 70 then
-                if workspace.CurrentCamera.FieldOfView ~= FOVValue then
-                    workspace.CurrentCamera.FieldOfView = FOVValue
-                end
-            end
-        end)
+    -- Function to set FOV
+    local function setFOV(value)
+        if isFOVEnabled and camera then
+            camera.FieldOfView = value
+        end
     end
     
-    VisualsGroupbox2:CreateSlider({
+    -- Character respawn detection to reapply FOV
+    LocalPlayer.CharacterAdded:Connect(function(char)
+        char:WaitForChild("Humanoid")
+        task.wait(1)
+        if isFOVEnabled then
+            setFOV(customFOV)
+        end
+    end)
+    
+    -- Force FOV enforcement loop (prevents weapon/game overrides)
+    game:GetService("RunService").RenderStepped:Connect(function()
+        if isFOVEnabled and camera.FieldOfView ~= customFOV then
+            camera.FieldOfView = customFOV
+        end
+    end)
+    
+    -- FOV Enable/Disable Toggle
+    VisualsGroupbox2:CreateToggle({
         Name = "FOV Changer",
+        CurrentValue = false,
+        Style = 2,
         Icon = NebulaIcons:GetIcon("camera", "Material"),
+        Tooltip = "Enable custom FOV (prevents weapon/game overrides)",
+        Callback = function(Value)
+            isFOVEnabled = Value
+            
+            if isFOVEnabled then
+                setFOV(customFOV)
+            else
+                -- Restore default FOV when disabled
+                if camera then
+                    camera.FieldOfView = defaultFOV
+                end
+            end
+        end
+    }, "TOGGLE_FOV")
+    
+    -- FOV Value Slider
+    VisualsGroupbox2:CreateSlider({
+        Name = "FOV Value",
+        Icon = NebulaIcons:GetIcon("camera_alt", "Material"),
         Range = {1, 120},
         Increment = 1,
         Suffix = "°",
-        CurrentValue = 70,
-        Tooltip = "Adjust your field of view",
+        CurrentValue = math.floor(defaultFOV),
+        Tooltip = "Adjust your field of view (1-120)",
         Callback = function(Value)
-            FOVValue = Value
-            
-            -- Immediately set FOV
-            if workspace.CurrentCamera then
-                workspace.CurrentCamera.FieldOfView = Value
-            end
-            
-            print("FOV set to: " .. Value .. "°")
+            customFOV = Value
+            setFOV(Value)
         end
     }, "SLIDER_FOV")
 
