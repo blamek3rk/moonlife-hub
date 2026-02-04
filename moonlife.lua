@@ -123,137 +123,36 @@ local Window = Starlight:CreateWindow({
             print("Camlock: " .. (Value and "ENABLED" or "DISABLED"))
         end
     }, "TOGGLE_CAMLOCK")
-
-    -- Silent Aim System
+    
+    -- Silent Aim Groupbox
+    local SilentAimGroupbox = AimbotTab:CreateGroupbox({
+        Name = "Silent Aim",
+        Icon = NebulaIcons:GetIcon("track_changes", "Material"),
+        Column = 2,
+    }, "GB_SILENT_AIM")
+    
+    -- Silent Aim Settings
     local SilentAimSettings = {
         Enabled = false,
         TargetPart = "Head",
-        TeamCheck = false,
-        VisibleCheck = false,
-        HitChance = 100
+        FOV = 200,
+        WallCheck = true,
+        TeamCheck = true,
     }
     
-    local function CalculateChance(Percentage)
-        Percentage = math.floor(Percentage)
-        local chance = math.floor(Random.new().NextNumber(Random.new(), 0, 1) * 100) / 100
-        return chance <= Percentage / 100
-    end
-    
-    local function getDirection(Origin, Position)
-        return (Position - Origin).Unit * 1000
-    end
-    
-    local function IsPlayerVisible(Player)
-        local PlayerCharacter = Player.Character
-        local LocalPlayerCharacter = game.Players.LocalPlayer.Character
-        
-        if not (PlayerCharacter and LocalPlayerCharacter) then return false end
-        
-        local PlayerRoot = PlayerCharacter:FindFirstChild(SilentAimSettings.TargetPart) or PlayerCharacter:FindFirstChild("HumanoidRootPart")
-        
-        if not PlayerRoot then return false end
-        
-        local CastPoints = {PlayerRoot.Position}
-        local IgnoreList = {LocalPlayerCharacter, PlayerCharacter}
-        local ObscuringObjects = #workspace.CurrentCamera:GetPartsObscuringTarget(CastPoints, IgnoreList)
-        
-        return ObscuringObjects == 0
-    end
-    
-    local function getClosestPlayerSilent()
-        local Closest = nil
-        local ClosestDistance = math.huge
-        
-        for _, Player in pairs(game.Players:GetPlayers()) do
-            if Player == game.Players.LocalPlayer then continue end
-            if SilentAimSettings.TeamCheck and Player.Team == game.Players.LocalPlayer.Team then continue end
-            
-            local Character = Player.Character
-            if not Character then continue end
-            
-            if SilentAimSettings.VisibleCheck and not IsPlayerVisible(Player) then continue end
-            
-            local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
-            local Humanoid = Character:FindFirstChild("Humanoid")
-            if not HumanoidRootPart or not Humanoid or Humanoid.Health <= 0 then continue end
-            
-            local ScreenPos, OnScreen = workspace.CurrentCamera:WorldToViewportPoint(HumanoidRootPart.Position)
-            if not OnScreen then continue end
-            
-            local MousePos = game:GetService("UserInputService"):GetMouseLocation()
-            local Distance = (MousePos - Vector2.new(ScreenPos.X, ScreenPos.Y)).Magnitude
-            
-            if Distance < ClosestDistance then
-                local TargetPart = Character:FindFirstChild(SilentAimSettings.TargetPart)
-                if TargetPart then
-                    Closest = TargetPart
-                    ClosestDistance = Distance
-                end
-            end
-        end
-        
-        return Closest
-    end
-    
-    -- Silent Aim Hooks
-    local oldNamecall
-    oldNamecall = hookmetamethod(game, "__namecall", function(...)
-        local Method = getnamecallmethod()
-        local Arguments = {...}
-        local self = Arguments[1]
-        
-        if SilentAimSettings.Enabled and self == workspace and not checkcaller() then
-            local chance = CalculateChance(SilentAimSettings.HitChance)
-            if not chance then return oldNamecall(...) end
-            
-            if Method == "FindPartOnRayWithIgnoreList" then
-                local A_Ray = Arguments[2]
-                local HitPart = getClosestPlayerSilent()
-                
-                if HitPart then
-                    local Origin = A_Ray.Origin
-                    local Direction = getDirection(Origin, HitPart.Position)
-                    Arguments[2] = Ray.new(Origin, Direction)
-                    return oldNamecall(unpack(Arguments))
-                end
-            elseif Method == "Raycast" then
-                local A_Origin = Arguments[2]
-                local HitPart = getClosestPlayerSilent()
-                
-                if HitPart then
-                    Arguments[3] = getDirection(A_Origin, HitPart.Position)
-                    return oldNamecall(unpack(Arguments))
-                end
-            end
-        end
-        
-        return oldNamecall(...)
-    end)
-    
     -- Silent Aim Toggle
-    AimbotGroupbox:CreateToggle({
-        Name = "Silent Aim",
+    SilentAimGroupbox:CreateToggle({
+        Name = "Enable Silent Aim",
         CurrentValue = false,
         Style = 2,
         Icon = NebulaIcons:GetIcon("gps_not_fixed", "Material"),
-        Tooltip = "Automatically redirect shots to nearest player",
+        Tooltip = "Redirects shots to target without moving camera",
         Callback = function(Value)
             SilentAimSettings.Enabled = Value
             print("Silent Aim: " .. (Value and "ENABLED" or "DISABLED"))
         end
-    }, "TOGGLE_SILENTAIM")
+    }, "TOGGLE_SILENT_AIM")
     
-    -- Target Part Dropdown
-    AimbotGroupbox:CreateDropdown({
-        Name = "Target Part",
-        Options = {"Head", "HumanoidRootPart", "UpperTorso", "LowerTorso"},
-        Default = "Head",
-        Callback = function(Value)
-            SilentAimSettings.TargetPart = Value
-            CamlockSettings.TargetPart = Value
-            print("Target Part set to: " .. Value)
-        end
-    }, "DROPDOWN_TARGET_PART")
 
     -- TAB 3: Visuals
     --[[
